@@ -1,0 +1,105 @@
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: vs
+      frag: fs
+      pass: post-process
+      rasterizerState:
+        cullMode: none
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: one
+          blendDst: one_minus_src_alpha
+          blendSrcAlpha: one
+          blendDstAlpha: zero
+      properties:
+        outlineWidth: { value: 0, editor: { type: integer, min: 1, max: 10, step: 1 } }
+}%
+
+#version 300 es
+
+CCProgram vs %{
+  precision highp float;
+
+  #include <legacy/decode-standard>
+  #include <builtin/uniforms/cc-global>
+  #include <common/common-define>
+
+  out vec2 v_uv;
+
+  void main () {
+    StandardVertInput In;
+    CCDecode(In);
+    CC_HANDLE_GET_CLIP_FLIP(In.position.xy);
+    gl_Position = In.position;
+
+    v_uv = a_texCoord;
+  }
+}%
+
+CCProgram fs %{
+  precision highp float;
+
+  // #include <builtin/uniforms/cc-global>
+
+  in vec2 v_uv;
+  
+  uniform UBO {
+    vec4 inputViewPort;
+    int outlineWidth;
+  };
+  #pragma rate inputTexture pass
+  uniform sampler2D inputTexture;
+
+  layout(location = 0) out vec4 fragColor;
+
+  mat3 kernelx = mat3(-1.0, 0.0, 1.0,
+                      -2.0, 0.0, 2.0,
+                      -1.0, 0.0, 1.0);
+
+  mat3 kernely = mat3(-1.0, -2.0, -1.0,
+                       0.0,  0.0,  0.0,
+                       1.0,  2.0,  1.0);
+
+  // SOBEL
+  float calculateSobelOutline(vec2 center, vec2 texelSize) {
+    float magX = 0.0;
+    float magY = 0.0;
+
+    for(int y = 0; y < 3; y++) {
+      for(int x = 0; x < 3; x++) {
+        vec2 offset = vec2(x - 1, y - 1);
+        vec4 tex = texture(inputTexture, center + offset * texelSize);
+
+        magX += tex.a * kernelx[y][x];
+        magY += tex.a * kernely[y][x];
+      }
+    }
+
+    return sqrt(magX * magX + magY * magY);
+  }
+
+  void main () {
+    vec4 o = texture(inputTexture, v_uv);
+
+    if(o.a <= 0.9) {
+      #if __VERSION__ == 300
+        ivec2 size = textureSize(inputTexture, 0);
+        vec2 texelSize = 1.0 / vec2(1280, 720);
+
+        float mag = 0.0;
+        for(int i = 1; i <= outlineWidth; ++i) {
+          mag += calculateSobelOutline(v_uv, texelSize * float(i));
+        }
+
+        o = mix(o, vec4(0.0, 0.0, 0.0, 1.0), mag);
+      #endif
+    }
+
+    fragColor = o;
+  }
+}%

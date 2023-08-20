@@ -1,0 +1,10 @@
+{
+  "__version__": "1.0.5",
+  "layer": [
+    {
+      "name": "OUTLINE",
+      "value": 524288
+    }
+  ],
+  "custom_joint_texture_layouts": []
+}
